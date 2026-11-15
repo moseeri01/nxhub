@@ -21,6 +21,7 @@ local ok_maclib, MacLib = pcall(function()
 end)
 if not ok_maclib or not MacLib then
     warn("[moseeri watch] MacLib failed to load: " .. tostring(MacLib))
+    pcall(function() game:GetService("StarterGui"):SetCore("SendNotification", { Title = "moseeri watch", Text = "UI library did not load (GitHub). Run it again in a minute.", Duration = 10 }) end)
     return
 end
 
@@ -707,7 +708,6 @@ ensureFolder()
 if startWatch then pcall(setWatch, true) end
 if startListen then pcall(setListen, true) end
 if not canFiles then notify("This executor cannot write files: use Copy last 40 lines.") end
--- (11-14: starts hidden so it does not cover the farm window; MW opens it)
-W.shown = false
-pcall(function() Window:SetState(false) end)
-notify("Ready. MW shows the recorder window.")
+-- (11-15 owner: run alone it looked like nothing happened - the window opens at start again)
+W.shown = true
+notify("Ready. MW or LeftControl shows / hides the recorder.")
