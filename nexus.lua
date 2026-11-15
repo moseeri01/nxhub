@@ -589,7 +589,13 @@ task.spawn(function()
         task.wait(tick)
         if F.cfg.autoMine and F.ready then
             pcall(function()
-                -- no rocks known: enter (again) at most every 20 s
+                -- (11-15 bug: "Enter" teleports the character into the mine. The list ran empty every ~20 s and the
+                -- re-enter pulled the player back 10 times in 3.5 min - the owner could not walk to the Event.
+                -- Now it only mines and re-enters while the character is IN the mine (within 200 studs of it);
+                -- walk or teleport away and it stops on its own. Switching Auto mine on enters once.)
+                local r = root()
+                local near = r and (Vector3.new(r.Position.X, 0, r.Position.Z) - Vector3.new(-14000, 0, 14010)).Magnitude < 200
+                if not near then return end
                 if rockCount() == 0 and os.clock() - F.gmine.entered > 20 then mineEnter() end
                 local _, ev = mineRemotes()
                 if not ev then return end
