@@ -607,6 +607,51 @@ task.spawn(function()
     end
 end)
 W.autoScreen = true
+
+-- (11-15: mining. Rocks are Workspace.NW_GMineRocks.Rock; a hit is NWGMineEv:FireServer("h", <number>). The number is
+-- not in the model's own attributes - this writes every rock with ALL its descendants' attributes and values so the
+-- number can be found. Runs once, 15 s after load, and from the button)
+local function scanRocks()
+    local out = { "# rocks " .. os.date("%Y-%m-%d %H:%M:%S") }
+    local function attrs(o)
+        local ok, a = pcall(function() return o:GetAttributes() end)
+        if ok and next(a) then return " " .. describe(a, 1) end
+        return ""
+    end
+    for _, fname in ipairs({ "NW_GMineRocks", "NW_GurrenOreRocks", "NW_GurrenPlainRocks", "NW_GurrenMine" }) do
+        local f = workspace:FindFirstChild(fname)
+        if f then
+            out[#out + 1] = ""
+            out[#out + 1] = "## " .. f:GetFullName() .. attrs(f)
+            local n = 0
+            for _, r in ipairs(f:GetChildren()) do
+                n = n + 1
+                if n > 40 then out[#out + 1] = "  ..." break end
+                local p
+                pcall(function() p = r:GetPivot().Position end)
+                out[#out + 1] = string.format("  [%d] %s [%s]%s%s", n, r.Name, r.ClassName, p and string.format(" at %.1f %.1f %.1f", p.X, p.Y, p.Z) or "", attrs(r))
+                local m = 0
+                for _, d in ipairs(r:GetDescendants()) do
+                    local a = attrs(d)
+                    local v = ""
+                    if d:IsA("ValueBase") then pcall(function() v = " = " .. describe(d.Value, 1) end) end
+                    if a ~= "" or v ~= "" or d:IsA("ClickDetector") or d:IsA("ProximityPrompt") then
+                        m = m + 1
+                        if m <= 12 then out[#out + 1] = "      " .. d.Name .. " [" .. d.ClassName .. "]" .. a .. v end
+                    end
+                end
+            end
+        end
+    end
+    local name = FOLDER .. "/rocks_" .. os.date("%m%d_%H%M%S") .. ".txt"
+    writeFile(name, table.concat(out, "\n"))
+    return name
+end
+sLeft:Button({ Name = "Scan mine rocks", Callback = function()
+    local ok, name = pcall(scanRocks)
+    notify(ok and ("rocks -> " .. tostring(name)) or ("Scan failed: " .. tostring(name)))
+end })
+task.delay(15, function() pcall(scanRocks) end)
 sRight:Paragraph({
     Header = "When to scan",
     Body = "Scan game: once in the lobby, once inside a stage.\nScan map: inside a stage after placing 2-3 units, while enemies walk.\nScan modules: locked (done on 11-14).",
