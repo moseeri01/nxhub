@@ -332,12 +332,16 @@ end)
 
 local lastSkill = 0
 local function trySkill()
-    if os.clock() - lastSkill < 5 then return end
+    -- (11-15 owner: use all 3 skills. UnitAction("Active", model, slot) - the game's own taps used slot 1; units
+    -- with more skills get slots 2 and 3 too. Every 2 s; a skill still on cooldown is refused by the server)
+    if os.clock() - lastSkill < 2 then return end
     local ua = unitAction()
     if not ua then return end
     lastSkill = os.clock()
     for _, m in ipairs(F.mine) do
-        if m.model and m.model.Parent then fire(ua, "Active", m.model, 1) end
+        if m.model and m.model.Parent then
+            for slot = 1, 3 do fire(ua, "Active", m.model, slot) end
+        end
     end
 end
 
