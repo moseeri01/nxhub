@@ -968,7 +968,8 @@ local function setShown(v) win.Visible = v end
 tb.MouseButton1Click:Connect(function() setShown(not win.Visible) end)
 dots.MouseButton1Click:Connect(function() setShown(false) end)
 UIS.InputBegan:Connect(function(input, gp)
-    if not gp and input.KeyCode == Enum.KeyCode.RightControl then setShown(not win.Visible) end
+    -- (11-15 owner: Ctrl did nothing - AA uses LeftControl. Either Ctrl key shows / hides the window)
+    if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then setShown(not win.Visible) end
 end)
 
 gui.Parent = guiParent
@@ -992,4 +993,4 @@ G.__nexus_farm = F -- (for checking from the watch / console)
 
 ensureFolder()
 log("loaded")
-notify("Ready. MN shows / hides the window.")
+notify("Ready. Ctrl or the MN button shows / hides the window.")
