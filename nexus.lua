@@ -27,7 +27,7 @@ local F = {
         afterWin = "Replay", afterLoss = "Retry", autoPlace = false, autoUpgrade = false,
         autoSkill = false, perUnit = 3, maxUnits = 12, radius = 7, waitResult = 8,
         stopRarities = { Legendary = true, Mythic = true, Divine = true, Ascendant = true, Nexus = true, Secret = true },
-        stopShiny = true, stopNames = "", stopEarly = false, autoBoss = false, autoMine = false, mineTick = 0.5,
+        stopShiny = true, stopNames = "", stopEarly = false, autoBoss = false, bossMode = "Solo", autoMine = false, mineTick = 0.5, fastSkip = false,
     },
     centers = {},       -- base index -> {x,y,z}: where the units go around
     learned = {},       -- base index -> list of {x,y,z} taken from the player's own placements
@@ -469,6 +469,12 @@ task.spawn(function()
             end
             if F.inMatch and os.clock() - F.lastWaveAt > 25 then F.inMatch = false end
             syncGameSettings()
+            -- (11-15 owner: enemies faster. The game sends StageEnd("SkipWave") itself about every 10 s; this sends it
+            -- every second while in a stage, so the next wave is called as soon as the server allows it)
+            if F.cfg.fastSkip and F.inMatch and os.clock() - (F.lastSkip or 0) > 1 then
+                F.lastSkip = os.clock()
+                fire(Remotes and Remotes:FindFirstChild("StageEnd"), "SkipWave")
+            end
             -- the game started the next stage itself after the result screen closed: nothing to do
             if F.resultAt and F.closedAt and F.closedAt > F.resultAt and F.lastWaveAt > F.closedAt then
                 F.resultAt = nil
@@ -523,11 +529,14 @@ task.spawn(function()
             pcall(function()
                 local r = Remotes:FindFirstChild("NWSorcererKing")
                 if not r then return end
-                local ok, res = pcall(function() return r:InvokeServer("join") end)
+                -- (11-15 11:01 recorded: Play Solo = InvokeServer("solo") -> {ok=true} and a teleport to the fight;
+                -- Join Queue = InvokeServer("join"). The throne is open 10 minutes each hour, else the server refuses)
+                local op = F.cfg.bossMode == "Queue" and "join" or "solo"
+                local ok, res = pcall(function() return r:InvokeServer(op) end)
                 if ok and type(res) == "table" and res.ok then
                     F.boss.waitUntil = os.clock() + 240
-                    F.boss.last = os.date("%H:%M") .. " joined the queue"
-                    log("boss: joined the Sorcerer King queue")
+                    F.boss.last = os.date("%H:%M") .. (op == "solo" and " solo fight started" or " joined the queue")
+                    log("boss: " .. op .. " ok")
                 else
                     local msg = type(res) == "table" and tostring(res.msg or res.err or "closed") or tostring(res)
                     F.boss.last = os.date("%H:%M") .. " " .. msg:sub(1, 40)
@@ -1007,9 +1016,10 @@ end)
 -- Boss (own tab, owner 11-14: joining the Sorcerer King queue is enough)
 local bossPage = UI.page("Boss", 5)
 local boss = UI.card(bossPage, 1, "Sorcerer King")
-UI.toggle(boss, "Auto join queue", cfgGet("autoBoss"), function(v) F.cfg.autoBoss = v F.boss.lastTry = 0 F.boss.waitUntil = 0 saveAll() end)
+UI.toggle(boss, "Auto join boss", cfgGet("autoBoss"), function(v) F.cfg.autoBoss = v F.boss.lastTry = 0 F.boss.waitUntil = 0 saveAll() end)
 UI.info(boss, "Last try", function() return F.boss.last end)
-UI.note(boss, "Opens every hour. Tries once a minute from the lobby; after joining it waits 4 minutes.")
+UI.choice(boss, "Mode", { "Solo", "Queue" }, cfgGet("bossMode"), cfgSet("bossMode"))
+UI.note(boss, "Open 10 min each hour. Solo = fight alone at once; Queue = wait for other players.")
 -- Mine (own tab)
 local minePage = UI.page("Mine", 6)
 local mc = UI.card(minePage, 1, "Gurren mine")
