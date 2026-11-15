@@ -27,7 +27,7 @@ local F = {
         afterWin = "Replay", afterLoss = "Retry", autoPlace = false, autoUpgrade = false,
         autoSkill = false, perUnit = 3, maxUnits = 12, radius = 7, waitResult = 8,
         stopRarities = { Legendary = true, Mythic = true, Divine = true, Ascendant = true, Nexus = true, Secret = true },
-        stopShiny = true, stopNames = "", stopEarly = false, autoBoss = false,
+        stopShiny = true, stopNames = "", stopEarly = false, autoBoss = false, autoMine = false, mineTick = 0.5,
     },
     centers = {},       -- base index -> {x,y,z}: where the units go around
     learned = {},       -- base index -> list of {x,y,z} taken from the player's own placements
@@ -538,6 +538,71 @@ end)
 if game.PlaceId == BOSS_PLACE then log("boss: in the Sorcerer King place") end
 
 --------------------------------------------------------------------------------
+-- Gurren mine (seen 11-15): Remotes.NWGMine:InvokeServer("Enter") answers {ok, rocks={{id, type, pos, crystal}...}};
+-- RemoteEvent NWGMineEv <- ("s", id, type, pos, crystal) a rock appears, ("b", id, amount, ...) a rock breaks;
+-- a hit is NWGMineEv:FireServer("h", id). The owner's account has the pass that mines every rock at once, so each
+-- round hits every known rock once. One round every mineTick seconds (0.5 s = 2 hits a second per rock).
+--------------------------------------------------------------------------------
+F.gmine = { rocks = {}, count = 0, broken = 0, entered = 0, last = "-" }
+local function mineRemotes()
+    return Remotes:FindFirstChild("NWGMine"), Remotes:FindFirstChild("NWGMineEv")
+end
+local function rockCount()
+    local n = 0
+    for _ in pairs(F.gmine.rocks) do n = n + 1 end
+    return n
+end
+local function mineEnter()
+    local rf = mineRemotes()
+    if not rf then return false end
+    local ok, res = pcall(function() return rf:InvokeServer("Enter", nil) end)
+    F.gmine.entered = os.clock()
+    if ok and type(res) == "table" and res.ok and type(res.rocks) == "table" then
+        F.gmine.rocks = {}
+        for _, r in ipairs(res.rocks) do
+            if type(r) == "table" and r[1] then F.gmine.rocks[r[1]] = { type = r[2], pos = r[3] } end
+        end
+        F.gmine.last = os.date("%H:%M") .. " entered, " .. rockCount() .. " rocks"
+        log("mine: entered, " .. rockCount() .. " rocks")
+        return true
+    end
+    F.gmine.last = os.date("%H:%M") .. " enter refused: " .. (type(res) == "table" and tostring(res.msg or res.err) or tostring(res)):sub(1, 40)
+    return false
+end
+pcall(function()
+    local _, ev = mineRemotes()
+    if not (ev and ev:IsA("RemoteEvent")) then return end
+    F.conns[#F.conns + 1] = ev.OnClientEvent:Connect(function(kind, id, a3, a4)
+        pcall(function()
+            if kind == "s" and id then
+                F.gmine.rocks[id] = { type = a3, pos = a4 }
+            elseif kind == "b" and id then
+                F.gmine.rocks[id] = nil
+                F.gmine.broken = F.gmine.broken + 1
+            end
+        end)
+    end)
+end)
+task.spawn(function()
+    while F.alive do
+        local tick = math.clamp(tonumber(F.cfg.mineTick) or 0.5, 0.2, 3)
+        task.wait(tick)
+        if F.cfg.autoMine and F.ready then
+            pcall(function()
+                -- no rocks known: enter (again) at most every 20 s
+                if rockCount() == 0 and os.clock() - F.gmine.entered > 20 then mineEnter() end
+                local _, ev = mineRemotes()
+                if not ev then return end
+                for id in pairs(F.gmine.rocks) do
+                    ev:FireServer("h", id)
+                    F.gmine.count = F.gmine.count + 1
+                end
+            end)
+        end
+    end
+end)
+
+--------------------------------------------------------------------------------
 -- Roll: uses the game's own auto roll (ChangeSetting "AutoRoll", seen 11-14) and stops it when a roll matches.
 -- RollResult <- {rolls={{name, rarity, shiny, uuid}}, next={name, shiny}, total} : next = what the NEXT roll gives
 --------------------------------------------------------------------------------
@@ -938,6 +1003,19 @@ local boss = UI.card(bossPage, 1, "Sorcerer King")
 UI.toggle(boss, "Auto join queue", cfgGet("autoBoss"), function(v) F.cfg.autoBoss = v F.boss.lastTry = 0 F.boss.waitUntil = 0 saveAll() end)
 UI.info(boss, "Last try", function() return F.boss.last end)
 UI.note(boss, "Opens every hour. Tries once a minute from the lobby; after joining it waits 4 minutes.")
+-- Mine (own tab)
+local minePage = UI.page("Mine", 6)
+local mc = UI.card(minePage, 1, "Gurren mine")
+UI.toggle(mc, "Auto mine all rocks", cfgGet("autoMine"), function(v)
+    F.cfg.autoMine = v
+    saveAll()
+    if v then task.spawn(mineEnter) end
+end)
+UI.info(mc, "Rocks now", function() return tostring(rockCount()) end)
+UI.info(mc, "Hits · Broken", function() return F.gmine.count .. " · " .. F.gmine.broken end)
+UI.info(mc, "Last", function() return F.gmine.last end)
+UI.choice(mc, "Seconds between rounds", { 0.3, 0.5, 1, 2 }, cfgGet("mineTick"), function(v) F.cfg.mineTick = tonumber(v) or 0.5 saveAll() end)
+UI.button(mc, "Rock list", "Enter again", function() mineEnter() end)
 local rollPage = UI.page("Roll", 4)
 local ar = UI.card(rollPage, 1, "Auto roll")
 UI.toggle(ar, "Auto roll", function() return R.on end, function(v) R.stopped = nil setGameAutoRoll(v) end)
